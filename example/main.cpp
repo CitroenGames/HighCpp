@@ -22,6 +22,10 @@ int main() {
         var doubleVar = makeDouble(3.14159);
         var stringVar = makeString("Hello, World!");
 
+        var _intVar = 42;
+        var _doubleVar = 3.14159;
+        var _stringVar = "Hello, World!";
+
         // 2. Creating and manipulating an array
         var arrayVar = makeArray(Array{ makeInt(1), makeInt(2), makeInt(3) });
         appendElement(arrayVar, makeInt(4));
