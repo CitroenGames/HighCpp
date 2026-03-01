@@ -17,21 +17,7 @@ var::var(const std::any& v) : value(v) {}
 var::var(std::any&& v) : value(std::move(v)) {}
 var::var(void* v) : value(v) {} // Constructor for void*
 
-// Template constructors
-template <typename T, typename>
-var::var(T&& v) : value(std::any(std::forward<T>(v))) {}
 
-template <typename T, typename>
-var::var(T ptr) : value(ptr) {}
-
-template <typename T, typename>
-var::var(const T& wp) {
-    std::weak_ptr<void> wp_void;
-    if (auto sp = wp.lock()) {
-        wp_void = std::static_pointer_cast<void>(sp);
-    }
-    value = wp_void;
-}
 
 // Copy Constructor for Deep Copy
 var::var(const var& other) {
@@ -97,11 +83,11 @@ var::var(const var& other) {
     case 9: // std::shared_ptr<void>
         value = std::get<std::shared_ptr<void>>(other.value);
         break;
-    case 10: // std::unique_ptr<void, std::default_delete<void>>
+    case 10: // std::unique_ptr<void, void(*)(void*)>
     {
         // Cannot copy unique_ptr; set to nullptr or handle appropriately
         // Here, we'll set it to nullptr
-        value = std::unique_ptr<void, std::default_delete<void>>(nullptr);
+        value = std::unique_ptr<void, void(*)(void*)>(nullptr, [](void*){});
     }
     break;
     case 11: // std::weak_ptr<void>
@@ -181,11 +167,11 @@ var& var::operator=(const var& other) {
     case 9: // std::shared_ptr<void>
         value = std::get<std::shared_ptr<void>>(other.value);
         break;
-    case 10: // std::unique_ptr<void, std::default_delete<void>>
+    case 10: // std::unique_ptr<void, void(*)(void*)>
     {
         // Cannot copy unique_ptr; set to nullptr or handle appropriately
         // Here, we'll set it to nullptr
-        value = std::unique_ptr<void, std::default_delete<void>>(nullptr);
+        value = std::unique_ptr<void, void(*)(void*)>(nullptr, [](void*){});
     }
     break;
     case 11: // std::weak_ptr<void>
@@ -198,28 +184,7 @@ var& var::operator=(const var& other) {
     return *this;
 }
 
-// Template assignment operators
-template <typename T, typename>
-var& var::operator=(T&& v) {
-    value = std::any(std::forward<T>(v));
-    return *this;
-}
 
-template <typename T, typename>
-var& var::operator=(T ptr) {
-    value = ptr;
-    return *this;
-}
-
-template <typename T, typename>
-var& var::operator=(const T& wp) {
-    std::weak_ptr<void> wp_void;
-    if (auto sp = wp.lock()) {
-        wp_void = std::static_pointer_cast<void>(sp);
-    }
-    value = wp_void;
-    return *this;
-}
 
 // Type checking
 bool var::isInt() const { return std::holds_alternative<int>(value); }
@@ -230,7 +195,7 @@ bool var::isTable() const { return std::holds_alternative<Table>(value); }
 bool var::isPointer() const { return std::holds_alternative<Pointer>(value); }
 bool var::isRawPointer() const { return std::holds_alternative<void*>(value); }
 bool var::isSharedPointer() const { return std::holds_alternative<std::shared_ptr<void>>(value); }
-bool var::isUniquePointer() const { return std::holds_alternative<std::unique_ptr<void, std::default_delete<void>>>(value); }
+bool var::isUniquePointer() const { return std::holds_alternative<std::unique_ptr<void, void(*)(void*)>>(value); }
 bool var::isWeakPointer() const { return std::holds_alternative<std::weak_ptr<void>>(value); }
 bool var::IsObject() const { return std::holds_alternative<std::any>(value); } // Renamed from isCustom()
 bool var::isNull() const { return std::holds_alternative<std::monostate>(value); }
@@ -306,14 +271,14 @@ std::shared_ptr<void> var::getSharedPointer() const {
     return std::get<std::shared_ptr<void>>(value);
 }
 
-std::unique_ptr<void, std::default_delete<void>>& var::getUniquePointer() {
+std::unique_ptr<void, void(*)(void*)>& var::getUniquePointer() {
     if (!isUniquePointer()) throw std::bad_variant_access();
-    return std::get<std::unique_ptr<void, std::default_delete<void>>>(value);
+    return std::get<std::unique_ptr<void, void(*)(void*)>>(value);
 }
 
-const std::unique_ptr<void, std::default_delete<void>>& var::getUniquePointer() const {
+const std::unique_ptr<void, void(*)(void*)>& var::getUniquePointer() const {
     if (!isUniquePointer()) throw std::bad_variant_access();
-    return std::get<std::unique_ptr<void, std::default_delete<void>>>(value);
+    return std::get<std::unique_ptr<void, void(*)(void*)>>(value);
 }
 
 std::weak_ptr<void> var::getWeakPointer() const {
@@ -441,21 +406,6 @@ std::ostream& operator<<(std::ostream& os, const var& varObj) {
     return os;
 }
 
-// Function to retrieve varType
-varType getVarType(const var& varObj) {
-    if (varObj.isInt()) return varType::Int;
-    if (varObj.isDouble()) return varType::Double;
-    if (varObj.isString()) return varType::String;
-    if (varObj.isArray()) return varType::Array;
-    if (varObj.isTable()) return varType::Table;
-    if (varObj.isPointer()) return varType::Pointer;
-    if (varObj.isRawPointer()) return varType::RawPointer;
-    if (varObj.isSharedPointer()) return varType::SharedPointer;
-    if (varObj.isUniquePointer()) return varType::UniquePointer;
-    if (varObj.isWeakPointer()) return varType::WeakPointer;
-    if (varObj.IsObject()) return varType::Object; // Changed from Custom
-    return varType::Null;
-}
 
 // ------------------------ Helper Functions Implementations ------------------------
 

@@ -28,7 +28,7 @@ enum class varType {
     Pointer,        // Pointer to var (shared_ptr<var>)
     RawPointer,     // Raw Pointer (void*)
     SharedPointer,  // std::shared_ptr<void>
-    UniquePointer,  // std::unique_ptr<void, std::default_delete<void>>
+    UniquePointer,  // std::unique_ptr<void, void(*)(void*)>
     WeakPointer,    // std::weak_ptr<void>
     Object          // Renamed from Custom for consistency
 };
@@ -39,6 +39,20 @@ struct is_weak_ptr : std::false_type {};
 
 template <typename T>
 struct is_weak_ptr<std::weak_ptr<T>> : std::true_type {};
+
+// Type trait to check if T is explicitly supported by var constructors
+template <typename T>
+struct is_var_supported : std::disjunction<
+    std::is_same<T, int>,
+    std::is_same<T, double>,
+    std::is_same<T, std::string>,
+    std::is_same<T, const char*>,
+    std::is_same<T, char*>,
+    std::is_same<T, Array>,
+    std::is_same<T, Table>,
+    std::is_same<T, std::shared_ptr<var>>,
+    std::is_same<T, std::any>
+> {};
 
 // Define the var structure
 struct var {
@@ -56,7 +70,7 @@ struct var {
         std::any,                       // Custom type for user-defined classes and pointers
         void*,                          // Raw Pointer
         std::shared_ptr<void>,          // Shared Pointer
-        std::unique_ptr<void, std::default_delete<void>>, // Unique Pointer
+        std::unique_ptr<void, void(*)(void*)>, // Unique Pointer
         std::weak_ptr<void>             // Weak Pointer
     > value;
 
@@ -81,19 +95,26 @@ struct var {
     template <typename T, typename = std::enable_if_t<
         !std::is_same_v<std::decay_t<T>, var> &&
         !std::is_pointer_v<std::decay_t<T>> &&
-        !is_weak_ptr<std::decay_t<T>>::value
+        !is_weak_ptr<std::decay_t<T>>::value &&
+        !is_var_supported<std::decay_t<T>>::value
         >>
-        var(T&& v);
+        var(T&& v) : value(std::any(std::forward<T>(v))) {}
 
     template <typename T, typename = std::enable_if_t<
         std::is_pointer_v<std::decay_t<T>> &&
         !std::is_same_v<std::decay_t<T>, void*> &&
         !is_weak_ptr<std::decay_t<T>>::value
         >>
-        var(T ptr);
+        var(T ptr) : value(ptr) {}
 
     template <typename T, typename = std::enable_if_t<is_weak_ptr<std::decay_t<T>>::value>>
-    var(const T& wp);
+    var(const T& wp) {
+        std::weak_ptr<void> wp_void;
+        if (auto sp = wp.lock()) {
+            wp_void = std::static_pointer_cast<void>(sp);
+        }
+        value = wp_void;
+    }
 
     // Copy and Move Constructors
     var(const var& other);
@@ -122,19 +143,33 @@ struct var {
     template <typename T, typename = std::enable_if_t<
         !std::is_same_v<std::decay_t<T>, var> &&
         !std::is_pointer_v<std::decay_t<T>> &&
-        !is_weak_ptr<std::decay_t<T>>::value
+        !is_weak_ptr<std::decay_t<T>>::value &&
+        !is_var_supported<std::decay_t<T>>::value
         >>
-        var & operator=(T&& v);
+        var & operator=(T&& v) {
+            value = std::any(std::forward<T>(v));
+            return *this;
+        }
 
     template <typename T, typename = std::enable_if_t<
         std::is_pointer_v<std::decay_t<T>> &&
         !std::is_same_v<std::decay_t<T>, void*> &&
         !is_weak_ptr<std::decay_t<T>>::value
         >>
-        var & operator=(T ptr);
+        var & operator=(T ptr) {
+            value = ptr;
+            return *this;
+        }
 
     template <typename T, typename = std::enable_if_t<is_weak_ptr<std::decay_t<T>>::value>>
-    var& operator=(const T& wp);
+    var& operator=(const T& wp) {
+        std::weak_ptr<void> wp_void;
+        if (auto sp = wp.lock()) {
+            wp_void = std::static_pointer_cast<void>(sp);
+        }
+        value = wp_void;
+        return *this;
+    }
 
     // Type checking functions
     bool isInt() const;
@@ -165,8 +200,8 @@ struct var {
     std::any& getObject(); // Renamed from getCustom()
     void* getRawPointer() const;
     std::shared_ptr<void> getSharedPointer() const;
-    std::unique_ptr<void, std::default_delete<void>>& getUniquePointer();
-    const std::unique_ptr<void, std::default_delete<void>>& getUniquePointer() const;
+    std::unique_ptr<void, void(*)(void*)>& getUniquePointer();
+    const std::unique_ptr<void, void(*)(void*)>& getUniquePointer() const;
     std::weak_ptr<void> getWeakPointer() const;
 
     // Helper to get type as string
@@ -228,55 +263,76 @@ struct var {
 };
 
 // Free functions
-varType getVarType(const var& varObj);
+inline varType getVarType(const var& varObj) {
+    if (varObj.isInt()) return varType::Int;
+    if (varObj.isDouble()) return varType::Double;
+    if (varObj.isString()) return varType::String;
+    if (varObj.isArray()) return varType::Array;
+    if (varObj.isTable()) return varType::Table;
+    if (varObj.isPointer()) return varType::Pointer;
+    if (varObj.isRawPointer()) return varType::RawPointer;
+    if (varObj.isSharedPointer()) return varType::SharedPointer;
+    if (varObj.isUniquePointer()) return varType::UniquePointer;
+    if (varObj.isWeakPointer()) return varType::WeakPointer;
+    if (varObj.IsObject()) return varType::Object; // Changed from Custom
+    return varType::Null;
+}
 
 // Boxing functions
-var makeInt(int x);
-var makeDouble(double x);
-var makeString(const std::string& x);
-var makeString(std::string&& x);
-var makeArray(const Array& arr);
-var makeArray(Array&& arr);
-var makeTable(const Table& tbl);
-var makeTable(Table&& tbl);
-var makePointer(const var& varObj);
-var makePointer(var&& varObj);
-var makeCustom(const std::any& customObj);
-var makeCustom(std::any&& customObj);
+inline var makeInt(int x) { return var::makeInt(x); }
+inline var makeDouble(double x) { return var::makeDouble(x); }
+inline var makeString(const std::string& x) { return var::makeString(x); }
+inline var makeString(std::string&& x) { return var::makeString(std::move(x)); }
+inline var makeArray(const Array& arr) { return var::makeArray(arr); }
+inline var makeArray(Array&& arr) { return var::makeArray(std::move(arr)); }
+inline var makeTable(const Table& tbl) { return var::makeTable(tbl); }
+inline var makeTable(Table&& tbl) { return var::makeTable(std::move(tbl)); }
+inline var makePointer(const var& varObj) { return var::makePointer(varObj); }
+inline var makePointer(var&& varObj) { return var::makePointer(std::move(varObj)); }
+inline var makeCustom(const std::any& customObj) { return var::makeCustom(customObj); }
+inline var makeCustom(std::any&& customObj) { return var::makeCustom(std::move(customObj)); }
 
 // Array functions
-var newArray(const Array& arr);
-var newArray(Array&& arr);
-var getElement(const var& arrayVar, size_t index);
-void setElement(var& arrayVar, size_t index, const var& value);
-void appendElement(var& arrayVar, const var& value);
+inline var newArray(const Array& arr) { return var::newArray(arr); }
+inline var newArray(Array&& arr) { return var::newArray(std::move(arr)); }
+inline var getElement(const var& arrayVar, size_t index) { return var::getElement(arrayVar, index); }
+inline void setElement(var& arrayVar, size_t index, const var& value) { var::setElement(arrayVar, index, value); }
+inline void appendElement(var& arrayVar, const var& value) { var::appendElement(arrayVar, value); }
 
 // Table functions
-var newTable(const Table& tbl);
-var newTable(Table&& tbl);
-var getElement(const var& tableVar, const std::string& key);
-void setElement(var& tableVar, const std::string& key, const var& value);
+inline var newTable(const Table& tbl) { return var::newTable(tbl); }
+inline var newTable(Table&& tbl) { return var::newTable(std::move(tbl)); }
+inline var getElement(const var& tableVar, const std::string& key) { return var::getElement(tableVar, key); }
+inline void setElement(var& tableVar, const std::string& key, const var& value) { var::setElement(tableVar, key, value); }
 
 // Utility functions
-size_t len(const var& varObj);
-var range(int start, int end, int step);
-var range(int end);
-var slice(const var& arrayVar, int start, int end, int step);
+inline size_t len(const var& varObj) { return var::len(varObj); }
+inline var range(int start, int end, int step = 1) { return var::range(start, end, step); }
+inline var range(int end) { return var::range(end); }
+inline var slice(const var& arrayVar, int start, int end, int step = 1) { return var::slice(arrayVar, start, end, step); }
 
 // Utility functions for smart pointers
 template <typename T>
 var var::makeSmartPointer(const std::shared_ptr<T>& ptr) {
-    return var(std::static_pointer_cast<void>(ptr));
+    var v;
+    v.value = std::static_pointer_cast<void>(ptr);
+    return v;
 }
 
 template <typename T>
 var var::makeSmartPointer(std::shared_ptr<T>&& ptr) {
-    return var(std::static_pointer_cast<void>(std::move(ptr)));
+    var v;
+    v.value = std::static_pointer_cast<void>(std::move(ptr));
+    return v;
 }
 
 template <typename T>
 var var::makeSmartPointer(std::unique_ptr<T>&& ptr) {
-    return var(std::unique_ptr<void, std::default_delete<void>>(ptr.release()));
+    var v;
+    v.value = std::unique_ptr<void, void(*)(void*)>(ptr.release(), [](void* p) {
+        delete static_cast<T*>(p);
+    });
+    return v;
 }
 
 template <typename T>
