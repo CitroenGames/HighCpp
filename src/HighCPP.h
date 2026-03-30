@@ -26,9 +26,7 @@ enum class varType {
     Array,
     Table,
     Pointer,        // Pointer to var (shared_ptr<var>)
-    RawPointer,     // Raw Pointer (void*)
     SharedPointer,  // std::shared_ptr<void>
-    UniquePointer,  // std::unique_ptr<void, void(*)(void*)>
     WeakPointer,    // std::weak_ptr<void>
     Object          // Renamed from Custom for consistency
 };
@@ -68,9 +66,7 @@ struct var {
         Table,                          // Dynamic Table (Dictionary)
         Pointer,                        // Pointer to var for nested structures
         std::any,                       // Custom type for user-defined classes and pointers
-        void*,                          // Raw Pointer
-        std::shared_ptr<void>,          // Shared Pointer
-        std::unique_ptr<void, void(*)(void*)>, // Unique Pointer
+        std::shared_ptr<void>,          // Shared Pointer (also used for typed pointer ownership)
         std::weak_ptr<void>             // Weak Pointer
     > value;
 
@@ -89,7 +85,6 @@ struct var {
     var(Pointer&& v);
     var(const std::any& v);
     var(std::any&& v);
-    var(void* v);
 
     // Template constructors
     template <typename T, typename = std::enable_if_t<
@@ -100,12 +95,23 @@ struct var {
         >>
         var(T&& v) : value(std::any(std::forward<T>(v))) {}
 
+    // Typed pointer constructor: takes ownership via shared_ptr with typed deleter
     template <typename T, typename = std::enable_if_t<
         std::is_pointer_v<std::decay_t<T>> &&
         !std::is_same_v<std::decay_t<T>, void*> &&
         !is_weak_ptr<std::decay_t<T>>::value
         >>
-        var(T ptr) : value(ptr) {}
+        var(T ptr) {
+            using PointeeType = std::remove_pointer_t<std::decay_t<T>>;
+            if (ptr) {
+                value = std::shared_ptr<void>(
+                    const_cast<void*>(static_cast<const void*>(ptr)),
+                    [](void* p) { delete static_cast<PointeeType*>(p); }
+                );
+            } else {
+                value = std::shared_ptr<void>(nullptr);
+            }
+        }
 
     template <typename T, typename = std::enable_if_t<is_weak_ptr<std::decay_t<T>>::value>>
     var(const T& wp) {
@@ -151,13 +157,22 @@ struct var {
             return *this;
         }
 
+    // Typed pointer assignment: takes ownership via shared_ptr with typed deleter
     template <typename T, typename = std::enable_if_t<
         std::is_pointer_v<std::decay_t<T>> &&
         !std::is_same_v<std::decay_t<T>, void*> &&
         !is_weak_ptr<std::decay_t<T>>::value
         >>
         var & operator=(T ptr) {
-            value = ptr;
+            using PointeeType = std::remove_pointer_t<std::decay_t<T>>;
+            if (ptr) {
+                value = std::shared_ptr<void>(
+                    const_cast<void*>(static_cast<const void*>(ptr)),
+                    [](void* p) { delete static_cast<PointeeType*>(p); }
+                );
+            } else {
+                value = std::shared_ptr<void>(nullptr);
+            }
             return *this;
         }
 
@@ -178,9 +193,7 @@ struct var {
     bool isArray() const;
     bool isTable() const;
     bool isPointer() const;
-    bool isRawPointer() const;
     bool isSharedPointer() const;
-    bool isUniquePointer() const;
     bool isWeakPointer() const;
     bool IsObject() const; // Renamed from isCustom()
     bool isNull() const;
@@ -198,10 +211,7 @@ struct var {
     Pointer& getPointer();
     const std::any& getObject() const; // Renamed from getCustom()
     std::any& getObject(); // Renamed from getCustom()
-    void* getRawPointer() const;
     std::shared_ptr<void> getSharedPointer() const;
-    std::unique_ptr<void, void(*)(void*)>& getUniquePointer();
-    const std::unique_ptr<void, void(*)(void*)>& getUniquePointer() const;
     std::weak_ptr<void> getWeakPointer() const;
 
     // Helper to get type as string
@@ -260,6 +270,21 @@ struct var {
 
     template <typename T>
     static var makeSmartPointer(const std::weak_ptr<T>& ptr);
+
+    // Non-owning reference to an external object (user manages lifetime)
+    template <typename T>
+    static var ref(T* ptr) {
+        var v;
+        if (ptr) {
+            v.value = std::shared_ptr<void>(
+                const_cast<void*>(static_cast<const void*>(ptr)),
+                [](void*) { /* no-op deleter: does not own the object */ }
+            );
+        } else {
+            v.value = std::shared_ptr<void>(nullptr);
+        }
+        return v;
+    }
 };
 
 // Free functions
@@ -270,11 +295,9 @@ inline varType getVarType(const var& varObj) {
     if (varObj.isArray()) return varType::Array;
     if (varObj.isTable()) return varType::Table;
     if (varObj.isPointer()) return varType::Pointer;
-    if (varObj.isRawPointer()) return varType::RawPointer;
     if (varObj.isSharedPointer()) return varType::SharedPointer;
-    if (varObj.isUniquePointer()) return varType::UniquePointer;
     if (varObj.isWeakPointer()) return varType::WeakPointer;
-    if (varObj.IsObject()) return varType::Object; // Changed from Custom
+    if (varObj.IsObject()) return varType::Object;
     return varType::Null;
 }
 
@@ -329,9 +352,7 @@ var var::makeSmartPointer(std::shared_ptr<T>&& ptr) {
 template <typename T>
 var var::makeSmartPointer(std::unique_ptr<T>&& ptr) {
     var v;
-    v.value = std::unique_ptr<void, void(*)(void*)>(ptr.release(), [](void* p) {
-        delete static_cast<T*>(p);
-    });
+    v.value = std::shared_ptr<void>(std::move(ptr));
     return v;
 }
 

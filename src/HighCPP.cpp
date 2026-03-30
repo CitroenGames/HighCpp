@@ -15,7 +15,6 @@ var::var(const Pointer& v) : value(v) {}
 var::var(Pointer&& v) : value(std::move(v)) {}
 var::var(const std::any& v) : value(v) {}
 var::var(std::any&& v) : value(std::move(v)) {}
-var::var(void* v) : value(v) {} // Constructor for void*
 
 
 
@@ -77,20 +76,10 @@ var::var(const var& other) {
         }
     }
     break;
-    case 8: // void* (Raw Pointer)
-        value = std::get<void*>(other.value);
-        break;
-    case 9: // std::shared_ptr<void>
+    case 8: // std::shared_ptr<void> (shared ownership)
         value = std::get<std::shared_ptr<void>>(other.value);
         break;
-    case 10: // std::unique_ptr<void, void(*)(void*)>
-    {
-        // Cannot copy unique_ptr; set to nullptr or handle appropriately
-        // Here, we'll set it to nullptr
-        value = std::unique_ptr<void, void(*)(void*)>(nullptr, [](void*){});
-    }
-    break;
-    case 11: // std::weak_ptr<void>
+    case 9: // std::weak_ptr<void>
         value = std::get<std::weak_ptr<void>>(other.value);
         break;
     default:
@@ -161,20 +150,10 @@ var& var::operator=(const var& other) {
         }
     }
     break;
-    case 8: // void* (Raw Pointer)
-        value = std::get<void*>(other.value);
-        break;
-    case 9: // std::shared_ptr<void>
+    case 8: // std::shared_ptr<void> (shared ownership)
         value = std::get<std::shared_ptr<void>>(other.value);
         break;
-    case 10: // std::unique_ptr<void, void(*)(void*)>
-    {
-        // Cannot copy unique_ptr; set to nullptr or handle appropriately
-        // Here, we'll set it to nullptr
-        value = std::unique_ptr<void, void(*)(void*)>(nullptr, [](void*){});
-    }
-    break;
-    case 11: // std::weak_ptr<void>
+    case 9: // std::weak_ptr<void>
         value = std::get<std::weak_ptr<void>>(other.value);
         break;
     default:
@@ -193,9 +172,7 @@ bool var::isString() const { return std::holds_alternative<std::string>(value); 
 bool var::isArray() const { return std::holds_alternative<Array>(value); }
 bool var::isTable() const { return std::holds_alternative<Table>(value); }
 bool var::isPointer() const { return std::holds_alternative<Pointer>(value); }
-bool var::isRawPointer() const { return std::holds_alternative<void*>(value); }
 bool var::isSharedPointer() const { return std::holds_alternative<std::shared_ptr<void>>(value); }
-bool var::isUniquePointer() const { return std::holds_alternative<std::unique_ptr<void, void(*)(void*)>>(value); }
 bool var::isWeakPointer() const { return std::holds_alternative<std::weak_ptr<void>>(value); }
 bool var::IsObject() const { return std::holds_alternative<std::any>(value); } // Renamed from isCustom()
 bool var::isNull() const { return std::holds_alternative<std::monostate>(value); }
@@ -261,24 +238,9 @@ std::any& var::getObject() { // Renamed from getCustom()
     return std::get<std::any>(value);
 }
 
-void* var::getRawPointer() const {
-    if (!isRawPointer()) throw std::bad_variant_access();
-    return std::get<void*>(value);
-}
-
 std::shared_ptr<void> var::getSharedPointer() const {
     if (!isSharedPointer()) throw std::bad_variant_access();
     return std::get<std::shared_ptr<void>>(value);
-}
-
-std::unique_ptr<void, void(*)(void*)>& var::getUniquePointer() {
-    if (!isUniquePointer()) throw std::bad_variant_access();
-    return std::get<std::unique_ptr<void, void(*)(void*)>>(value);
-}
-
-const std::unique_ptr<void, void(*)(void*)>& var::getUniquePointer() const {
-    if (!isUniquePointer()) throw std::bad_variant_access();
-    return std::get<std::unique_ptr<void, void(*)(void*)>>(value);
 }
 
 std::weak_ptr<void> var::getWeakPointer() const {
@@ -294,9 +256,7 @@ std::string var::typeOf() const {
     if (isArray()) return "Array";
     if (isTable()) return "Table";
     if (isPointer()) return "Pointer";
-    if (isRawPointer()) return "RawPointer";
     if (isSharedPointer()) return "SharedPointer";
-    if (isUniquePointer()) return "UniquePointer";
     if (isWeakPointer()) return "WeakPointer";
     if (IsObject()) return "Object"; // Changed from "Custom" to "Object"
     return "Null";
@@ -339,30 +299,10 @@ std::ostream& operator<<(std::ostream& os, const var& varObj) {
         }
         os << ")";
     }
-    else if (varObj.isRawPointer()) {
-        os << "RawPointer(" << varObj.getRawPointer() << ")";
-    }
     else if (varObj.isSharedPointer()) {
         os << "SharedPointer(";
         auto ptr = varObj.getSharedPointer();
         if (ptr) {
-            // Attempt to print the pointed-to var
-            // Since stored as shared_ptr<void>, we need to cast
-            // Here, we'll assume it's pointing to var
-            auto pointedVar = std::static_pointer_cast<var>(ptr);
-            os << *pointedVar;
-        }
-        else {
-            os << "nullptr";
-        }
-        os << ")";
-    }
-    else if (varObj.isUniquePointer()) {
-        os << "UniquePointer(";
-        const auto& ptr = varObj.getUniquePointer(); // Corrected line
-
-        if (ptr) {
-            // Print the raw address without dereferencing
             os << ptr.get();
         }
         else {

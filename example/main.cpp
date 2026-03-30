@@ -45,14 +45,18 @@ int main() {
         var sharedPtrVar = var::makeSmartPointer(std::make_shared<var>(makeString("Shared Pointer")));
         std::cout << "Shared Pointer Var: " << sharedPtrVar << std::endl;
 
-        // 5. Handling unique_ptr
+        // 5. Handling unique_ptr (automatically converted to shared_ptr)
         var uniquePtrVar = var::makeSmartPointer(std::make_unique<var>(makeInt(999)));
         std::cout << "Unique Pointer Var: " << uniquePtrVar << std::endl;
 
-        // 6. Handling raw pointers
-        int rawInt = 555;
-        var rawPtrVar = var(&rawInt);
-        std::cout << "Raw Pointer Var: " << rawPtrVar << std::endl;
+        // 6. Automatic ownership of typed pointers
+        var ownedPtr = new int(555);
+        std::cout << "Owned Pointer Var: " << ownedPtr << std::endl;
+
+        // Non-owning reference (explicit opt-in via var::ref)
+        int stackInt = 777;
+        var refVar = var::ref(&stackInt);
+        std::cout << "Ref Var: " << refVar << std::endl;
 
         // 7. Handling weak_ptr
         std::shared_ptr<var> sharedForWeak = std::make_shared<var>(makeDouble(6.626));
@@ -95,9 +99,9 @@ int main() {
         std::cout << "Original Array Var after modification: " << arrayVar << std::endl;
         std::cout << "Deep Copied Array Var remains unchanged: " << deepCopiedArray << std::endl;
 
-        // 12. Demonstrating that copying unique_ptr_var sets it to nullptr
-        var uniqueCopyVar = uniquePtrVar; // Should be nullptr due to copy prohibition
-        std::cout << "Copied Unique Pointer Var: " << uniqueCopyVar << std::endl;
+        // 12. Demonstrating that copying unique_ptr var now shares ownership
+        var uniqueCopyVar = uniquePtrVar;
+        std::cout << "Copied Unique Pointer Var (shared ownership): " << uniqueCopyVar << std::endl;
 
     }
     catch (const std::exception& ex) {
