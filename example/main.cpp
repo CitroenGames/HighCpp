@@ -1,112 +1,187 @@
-#include "HighCpp.h"
-#include <cassert>
-
-// A sample custom class to store in std::any
-class MyClass {
-public:
-    std::string name;
-    int value;
-
-    MyClass(const std::string& n, int v) : name(n), value(v) {}
-
-    friend std::ostream& operator<<(std::ostream& os, const MyClass& obj) {
-        os << "MyClass(name: " << obj.name << ", value: " << obj.value << ")";
-        return os;
-    }
-};
+#include "HighCPP.h"
 
 int main() {
-    try {
-        // 1. Creating var objects with different types
-        var intVar = makeInt(42);
-        var doubleVar = makeDouble(3.14159);
-        var stringVar = makeString("Hello, World!");
+    // --- 1. Simple construction ---
+    var x = 42;
+    var pi = 3.14;
+    var name = "HighCPP";
+    var flag = true;
+    var nothing;
 
-        var _intVar = 42;
-        var _doubleVar = 3.14159;
-        var _stringVar = "Hello, World!";
+    print("=== Basic Types ===");
+    print("x =", x);
+    print("pi =", pi);
+    print("name =", name);
+    print("flag =", flag);
+    print("nothing =", nothing);
+    print("types:", x.typeOf(), pi.typeOf(), name.typeOf(), flag.typeOf(), nothing.typeOf());
+    print();
 
-        // 2. Creating and manipulating an array
-        var arrayVar = makeArray(Array{ makeInt(1), makeInt(2), makeInt(3) });
-        appendElement(arrayVar, makeInt(4));
-        setElement(arrayVar, 5, makeInt(6)); // This will resize the array
-        std::cout << "Array Var: " << arrayVar << std::endl;
+    // --- 2. Arrays ---
+    print("=== Arrays ===");
+    var arr = Array{1, 2, 3, 4, 5};
+    print("arr =", arr);
 
-        // 3. Creating and manipulating a table
-        var tableVar = makeTable(Table{
-            { "key1", makeString("value1") },
-            { "key2", makeDouble(2.718) },
-            { "key3", makeInt(100) }
-            });
-        setElement(tableVar, "key4", makeString("value4"));
-        std::cout << "Table Var: " << tableVar << std::endl;
+    arr.push(6);
+    print("after push(6):", arr);
 
-        // 4. Handling shared_ptr
-        var sharedPtrVar = var::makeSmartPointer(std::make_shared<var>(makeString("Shared Pointer")));
-        std::cout << "Shared Pointer Var: " << sharedPtrVar << std::endl;
+    print("arr[0] =", arr[0]);
+    print("arr[-1] =", arr[-1]);
 
-        // 5. Handling unique_ptr (automatically converted to shared_ptr)
-        var uniquePtrVar = var::makeSmartPointer(std::make_unique<var>(makeInt(999)));
-        std::cout << "Unique Pointer Var: " << uniquePtrVar << std::endl;
+    arr[0] = 100;
+    print("after arr[0] = 100:", arr);
 
-        // 6. Automatic ownership of typed pointers
-        var ownedPtr = new int(555);
-        std::cout << "Owned Pointer Var: " << ownedPtr << std::endl;
+    print("length =", arr.length());
+    print("contains 3?", arr.contains(3));
+    print("contains 99?", arr.contains(99));
 
-        // Non-owning reference (explicit opt-in via var::ref)
-        int stackInt = 777;
-        var refVar = var::ref(&stackInt);
-        std::cout << "Ref Var: " << refVar << std::endl;
+    var last = arr.pop();
+    print("popped:", last);
+    print("remaining:", arr);
+    print();
 
-        // 7. Handling weak_ptr
-        std::shared_ptr<var> sharedForWeak = std::make_shared<var>(makeDouble(6.626));
-        var weakPtrVar = var::makeSmartPointer(std::weak_ptr<var>(sharedForWeak));
-        std::cout << "Weak Pointer Var: " << weakPtrVar << std::endl;
+    // --- 3. Tables ---
+    print("=== Tables ===");
+    var tbl = Table{{"name", "Alice"}, {"age", 30}};
+    print("tbl =", tbl);
 
-        // 8. Handling custom objects with std::any
-        std::shared_ptr<MyClass> myClassPtr = std::make_shared<MyClass>("TestObject", 123);
-        var customVar = makeCustom(myClassPtr);
-        std::cout << "Custom Object Var: " << customVar << std::endl;
+    tbl["email"] = "alice@example.com";
+    print("after adding email:", tbl);
 
-        // Retrieving the custom object
-        if (customVar.IsObject()) {
-            auto retrievedPtr = std::any_cast<std::shared_ptr<MyClass>>(customVar.getObject());
-            if (retrievedPtr) {
-                std::cout << "Retrieved Custom Object: " << *retrievedPtr << std::endl;
-            }
+    print("tbl[\"name\"] =", tbl["name"]);
+    print("has 'name'?", tbl.has("name"));
+    print("has 'phone'?", tbl.has("phone"));
+    print("keys:", tbl.keys());
+    print("values:", tbl.values());
+    print("length =", tbl.length());
+    print();
+
+    // --- 4. Arithmetic ---
+    print("=== Arithmetic ===");
+    var a = 10;
+    var b = 3;
+    print("10 + 3 =", a + b);
+    print("10 - 3 =", a - b);
+    print("10 * 3 =", a * b);
+    print("10 / 3 =", a / b);
+    print("10 % 3 =", a % b);
+
+    var c = 2.5;
+    print("10 + 2.5 =", a + c);
+    print("10 * 2.5 =", a * c);
+
+    // String concatenation
+    var greeting = var("Hello, ") + name + var("!");
+    print(greeting);
+
+    // Number to string via concat
+    var msg = var("The answer is ") + x;
+    print(msg);
+    print();
+
+    // --- 5. Comparisons ---
+    print("=== Comparisons ===");
+    print("10 == 10:", var(10) == var(10));
+    print("10 == 10.0:", var(10) == var(10.0));
+    print("10 != 3:", a != b);
+    print("10 > 3:", a > b);
+    print("10 < 3:", a < b);
+    print("10 >= 10:", a >= var(10));
+    print("\"abc\" < \"def\":", var("abc") < var("def"));
+    print();
+
+    // --- 6. Truthiness ---
+    print("=== Truthiness ===");
+    var test_values = Array{var(), var(0), var(0.0), var(false), var(""), Array{}, Table{}, var(42), var("hi"), var(true)};
+    for (const auto& v : test_values) {
+        if (v) {
+            print(v, "-> truthy");
+        } else {
+            print(v, "-> falsy");
         }
-
-        // 9. Using range and slice functions
-        var rangeVar = range(0, 10, 2);
-        std::cout << "Range Var (0 to 10 step 2): " << rangeVar << std::endl;
-
-        var slicedVar = slice(arrayVar, 1, 6, 2);
-        std::cout << "Sliced Array Var (1 to 6 step 2): " << slicedVar << std::endl;
-
-        // 10. Demonstrating len function
-        std::cout << "Length of Array Var: " << len(arrayVar) << std::endl;
-        std::cout << "Length of Table Var: " << len(tableVar) << std::endl;
-
-        // 11. Demonstrating deep copy
-        var copiedVar = intVar; // Copying an int var
-        std::cout << "Copied Int Var: " << copiedVar << std::endl;
-
-        var deepCopiedArray = arrayVar; // Deep copy of array
-        std::cout << "Deep Copied Array Var: " << deepCopiedArray << std::endl;
-
-        // Modifying the original array to ensure deep copy
-        setElement(arrayVar, 0, makeInt(100));
-        std::cout << "Original Array Var after modification: " << arrayVar << std::endl;
-        std::cout << "Deep Copied Array Var remains unchanged: " << deepCopiedArray << std::endl;
-
-        // 12. Demonstrating that copying unique_ptr var now shares ownership
-        var uniqueCopyVar = uniquePtrVar;
-        std::cout << "Copied Unique Pointer Var (shared ownership): " << uniqueCopyVar << std::endl;
-
     }
-    catch (const std::exception& ex) {
-        std::cerr << "Exception occurred: " << ex.what() << std::endl;
+    print();
+
+    // --- 7. Functions ---
+    print("=== Functions ===");
+    var add = Function([](Array args) -> var {
+        return args[0] + args[1];
+    });
+    print("add(3, 4) =", add(3, 4));
+
+    var greet = Function([](Array args) -> var {
+        return var("Hello, ") + args[0] + var("!");
+    });
+    print(greet("World"));
+
+    var factorial = Function([](Array args) -> var {
+        int n = args[0].getInt();
+        int result = 1;
+        for (int i = 2; i <= n; ++i) result *= i;
+        return result;
+    });
+    print("factorial(5) =", factorial(5));
+    print("type:", add.typeOf());
+    print();
+
+    // --- 8. Iteration ---
+    print("=== Iteration ===");
+    var nums = Array{10, 20, 30, 40, 50};
+    for (const auto& item : nums) {
+        print(" -", item);
     }
+    print();
+
+    // --- 9. Range and Slice ---
+    print("=== Range & Slice ===");
+    var r = range(0, 10, 2);
+    print("range(0, 10, 2):", r);
+
+    var r2 = range(5);
+    print("range(5):", r2);
+
+    var s = slice(r, 1, 4);
+    print("slice(r, 1, 4):", s);
+    print();
+
+    // --- 10. Deep Copy ---
+    print("=== Deep Copy ===");
+    var original = Array{1, 2, 3};
+    var copy = original;
+    copy[0] = 999;
+    print("original:", original);
+    print("copy:", copy);
+    print();
+
+    // --- 11. Compound Assignment ---
+    print("=== Compound Assignment ===");
+    var counter = 0;
+    counter += 5;
+    print("0 += 5 ->", counter);
+    counter *= 3;
+    print("*= 3 ->", counter);
+    counter -= 2;
+    print("-= 2 ->", counter);
+    print();
+
+    // --- 12. Nested Access ---
+    print("=== Nested Structures ===");
+    var data = Table{
+        {"users", Array{
+            Table{{"name", "Alice"}, {"score", 95}},
+            Table{{"name", "Bob"}, {"score", 87}}
+        }}
+    };
+    print("data:", data);
+    print("first user:", data["users"][0]);
+    print("first user name:", data["users"][0]["name"]);
+    print();
+
+    // --- 13. Len ---
+    print("=== len() ===");
+    print("len(arr):", len(arr));
+    print("len(tbl):", len(tbl));
+    print("len(\"hello\"):", len(var("hello")));
 
     return 0;
 }

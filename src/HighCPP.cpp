@@ -1,7 +1,49 @@
-#include "HighCpp.h"
+#include "HighCPP.h"
 
+// ============================================================
+// Internal helpers
+// ============================================================
+
+namespace {
+
+enum class NumType { Int, Double, None };
+
+struct NumVal {
+    NumType type = NumType::None;
+    int i = 0;
+    double d = 0.0;
+};
+
+NumVal toNumeric(const var& v) {
+    if (v.isInt()) return { NumType::Int, v.getInt(), 0.0 };
+    if (v.isDouble()) return { NumType::Double, 0, v.getDouble() };
+    if (v.isBool()) return { NumType::Int, v.getBool() ? 1 : 0, 0.0 };
+    return { NumType::None, 0, 0.0 };
+}
+
+std::string varToString(const var& v) {
+    if (v.isString()) return v.getString();
+    if (v.isInt()) return std::to_string(v.getInt());
+    if (v.isDouble()) {
+        std::ostringstream oss;
+        oss << v.getDouble();
+        return oss.str();
+    }
+    if (v.isBool()) return v.getBool() ? "true" : "false";
+    if (v.isNull()) return "null";
+    std::ostringstream oss;
+    oss << v;
+    return oss.str();
+}
+
+} // anonymous namespace
+
+// ============================================================
 // Constructors
+// ============================================================
+
 var::var() : value(std::monostate{}) {}
+var::var(bool v) : value(v) {}
 var::var(int v) : value(v) {}
 var::var(double v) : value(v) {}
 var::var(const std::string& v) : value(v) {}
@@ -11,173 +53,98 @@ var::var(const Array& v) : value(v) {}
 var::var(Array&& v) : value(std::move(v)) {}
 var::var(const Table& v) : value(v) {}
 var::var(Table&& v) : value(std::move(v)) {}
-var::var(const Pointer& v) : value(v) {}
-var::var(Pointer&& v) : value(std::move(v)) {}
+var::var(const Function& v) : value(v) {}
+var::var(Function&& v) : value(std::move(v)) {}
 var::var(const std::any& v) : value(v) {}
 var::var(std::any&& v) : value(std::move(v)) {}
 
+// ============================================================
+// Copy Constructor (deep copy)
+// ============================================================
 
-
-// Copy Constructor for Deep Copy
 var::var(const var& other) {
-    // Handle each type accordingly
     switch (other.value.index()) {
-    case 0: // std::monostate
-        value = std::monostate{};
-        break;
-    case 1: // int
-        value = std::get<int>(other.value);
-        break;
-    case 2: // double
-        value = std::get<double>(other.value);
-        break;
-    case 3: // std::string
-        value = std::get<std::string>(other.value);
-        break;
-    case 4: // Array
-        value = std::get<Array>(other.value);
-        break;
-    case 5: // Table
-        value = std::get<Table>(other.value);
-        break;
-    case 6: // Pointer (shared_ptr<var>)
-    {
-        auto originalPtr = std::get<Pointer>(other.value);
-        if (originalPtr) {
-            // Perform a deep copy
-            value = std::make_shared<var>(*originalPtr);
-        }
-        else {
-            value = Pointer(nullptr);
-        }
-    }
-    break;
-    case 7: // std::any
-    {
-        const std::any& originalAny = std::get<std::any>(other.value);
-        if (originalAny.has_value()) {
-            // Attempt to copy based on the stored type
-            if (originalAny.type() == typeid(std::shared_ptr<var>)) {
-                auto originalSharedPtr = std::any_cast<std::shared_ptr<var>>(originalAny);
-                if (originalSharedPtr) {
-                    value = std::make_shared<var>(*originalSharedPtr);
-                }
-                else {
-                    value = std::shared_ptr<void>(nullptr);
-                }
-            }
-            else {
-                // For other types, perform a copy
-                value = originalAny;
-            }
-        }
-        else {
-            value = std::any{};
-        }
-    }
-    break;
-    case 8: // std::shared_ptr<void> (shared ownership)
-        value = std::get<std::shared_ptr<void>>(other.value);
-        break;
-    case 9: // std::weak_ptr<void>
-        value = std::get<std::weak_ptr<void>>(other.value);
-        break;
+    case 0: value = std::monostate{}; break;
+    case 1: value = std::get<bool>(other.value); break;
+    case 2: value = std::get<int>(other.value); break;
+    case 3: value = std::get<double>(other.value); break;
+    case 4: value = std::get<std::string>(other.value); break;
+    case 5: value = std::get<Array>(other.value); break;
+    case 6: value = std::get<Table>(other.value); break;
+    case 7: value = std::get<Function>(other.value); break;
+    case 8: value = std::get<std::any>(other.value); break;
     default:
         throw std::runtime_error("Unknown var type during copy construction.");
     }
 }
 
-// Copy Assignment Operator for Deep Copy
-var& var::operator=(const var& other) {
-    if (this == &other) return *this; // Self-assignment check
+// ============================================================
+// Copy Assignment (deep copy)
+// ============================================================
 
-    // Clear current value
+var& var::operator=(const var& other) {
+    if (this == &other) return *this;
     value = std::monostate{};
 
-    // Handle each type accordingly
     switch (other.value.index()) {
-    case 0: // std::monostate
-        value = std::monostate{};
-        break;
-    case 1: // int
-        value = std::get<int>(other.value);
-        break;
-    case 2: // double
-        value = std::get<double>(other.value);
-        break;
-    case 3: // std::string
-        value = std::get<std::string>(other.value);
-        break;
-    case 4: // Array
-        value = std::get<Array>(other.value);
-        break;
-    case 5: // Table
-        value = std::get<Table>(other.value);
-        break;
-    case 6: // Pointer (shared_ptr<var>)
-    {
-        auto originalPtr = std::get<Pointer>(other.value);
-        if (originalPtr) {
-            // Perform a deep copy
-            value = std::make_shared<var>(*originalPtr);
-        }
-        else {
-            value = Pointer(nullptr);
-        }
-    }
-    break;
-    case 7: // std::any
-    {
-        const std::any& originalAny = std::get<std::any>(other.value);
-        if (originalAny.has_value()) {
-            // Attempt to copy based on the stored type
-            if (originalAny.type() == typeid(std::shared_ptr<var>)) {
-                auto originalSharedPtr = std::any_cast<std::shared_ptr<var>>(originalAny);
-                if (originalSharedPtr) {
-                    value = std::make_shared<var>(*originalSharedPtr);
-                }
-                else {
-                    value = std::shared_ptr<void>(nullptr);
-                }
-            }
-            else {
-                // For other types, perform a copy
-                value = originalAny;
-            }
-        }
-        else {
-            value = std::any{};
-        }
-    }
-    break;
-    case 8: // std::shared_ptr<void> (shared ownership)
-        value = std::get<std::shared_ptr<void>>(other.value);
-        break;
-    case 9: // std::weak_ptr<void>
-        value = std::get<std::weak_ptr<void>>(other.value);
-        break;
+    case 0: value = std::monostate{}; break;
+    case 1: value = std::get<bool>(other.value); break;
+    case 2: value = std::get<int>(other.value); break;
+    case 3: value = std::get<double>(other.value); break;
+    case 4: value = std::get<std::string>(other.value); break;
+    case 5: value = std::get<Array>(other.value); break;
+    case 6: value = std::get<Table>(other.value); break;
+    case 7: value = std::get<Function>(other.value); break;
+    case 8: value = std::get<std::any>(other.value); break;
     default:
         throw std::runtime_error("Unknown var type during copy assignment.");
     }
-
     return *this;
 }
 
+// ============================================================
+// Assignment Operators
+// ============================================================
 
+var& var::operator=(bool v)               { value = v; return *this; }
+var& var::operator=(int v)                { value = v; return *this; }
+var& var::operator=(double v)             { value = v; return *this; }
+var& var::operator=(const std::string& v) { value = v; return *this; }
+var& var::operator=(std::string&& v)      { value = std::move(v); return *this; }
+var& var::operator=(const char* v)        { value = std::string(v); return *this; }
+var& var::operator=(const Array& v)       { value = v; return *this; }
+var& var::operator=(Array&& v)            { value = std::move(v); return *this; }
+var& var::operator=(const Table& v)       { value = v; return *this; }
+var& var::operator=(Table&& v)            { value = std::move(v); return *this; }
+var& var::operator=(const Function& v)    { value = v; return *this; }
+var& var::operator=(Function&& v)         { value = std::move(v); return *this; }
+var& var::operator=(const std::any& v)    { value = v; return *this; }
+var& var::operator=(std::any&& v)         { value = std::move(v); return *this; }
 
-// Type checking
-bool var::isInt() const { return std::holds_alternative<int>(value); }
-bool var::isDouble() const { return std::holds_alternative<double>(value); }
-bool var::isString() const { return std::holds_alternative<std::string>(value); }
-bool var::isArray() const { return std::holds_alternative<Array>(value); }
-bool var::isTable() const { return std::holds_alternative<Table>(value); }
-bool var::isPointer() const { return std::holds_alternative<Pointer>(value); }
-bool var::isSharedPointer() const { return std::holds_alternative<std::shared_ptr<void>>(value); }
-bool var::isWeakPointer() const { return std::holds_alternative<std::weak_ptr<void>>(value); }
-bool var::IsObject() const { return std::holds_alternative<std::any>(value); } // Renamed from isCustom()
-bool var::isNull() const { return std::holds_alternative<std::monostate>(value); }
+// ============================================================
+// Type Checking
+// ============================================================
 
-// Getters with type safety
+bool var::isNull() const     { return std::holds_alternative<std::monostate>(value); }
+bool var::isBool() const     { return std::holds_alternative<bool>(value); }
+bool var::isInt() const      { return std::holds_alternative<int>(value); }
+bool var::isDouble() const   { return std::holds_alternative<double>(value); }
+bool var::isNumber() const   { return isInt() || isDouble(); }
+bool var::isString() const   { return std::holds_alternative<std::string>(value); }
+bool var::isArray() const    { return std::holds_alternative<Array>(value); }
+bool var::isTable() const    { return std::holds_alternative<Table>(value); }
+bool var::isFunction() const { return std::holds_alternative<Function>(value); }
+bool var::isObject() const   { return std::holds_alternative<std::any>(value); }
+
+// ============================================================
+// Getters
+// ============================================================
+
+bool var::getBool() const {
+    if (!isBool()) throw std::bad_variant_access();
+    return std::get<bool>(value);
+}
+
 int var::getInt() const {
     if (!isInt()) throw std::bad_variant_access();
     return std::get<int>(value);
@@ -186,6 +153,12 @@ int var::getInt() const {
 double var::getDouble() const {
     if (!isDouble()) throw std::bad_variant_access();
     return std::get<double>(value);
+}
+
+double var::toNumber() const {
+    if (isInt()) return static_cast<double>(getInt());
+    if (isDouble()) return getDouble();
+    throw std::runtime_error("Cannot convert " + typeOf() + " to number");
 }
 
 const std::string& var::getString() const {
@@ -218,191 +191,461 @@ Table& var::getTable() {
     return std::get<Table>(value);
 }
 
-const var::Pointer& var::getPointer() const {
-    if (!isPointer()) throw std::bad_variant_access();
-    return std::get<Pointer>(value);
+const Function& var::getFunction() const {
+    if (!isFunction()) throw std::bad_variant_access();
+    return std::get<Function>(value);
 }
 
-var::Pointer& var::getPointer() {
-    if (!isPointer()) throw std::bad_variant_access();
-    return std::get<Pointer>(value);
+Function& var::getFunction() {
+    if (!isFunction()) throw std::bad_variant_access();
+    return std::get<Function>(value);
 }
 
-const std::any& var::getObject() const { // Renamed from getCustom()
-    if (!IsObject()) throw std::bad_variant_access();
+const std::any& var::getObject() const {
+    if (!isObject()) throw std::bad_variant_access();
     return std::get<std::any>(value);
 }
 
-std::any& var::getObject() { // Renamed from getCustom()
-    if (!IsObject()) throw std::bad_variant_access();
+std::any& var::getObject() {
+    if (!isObject()) throw std::bad_variant_access();
     return std::get<std::any>(value);
 }
 
-std::shared_ptr<void> var::getSharedPointer() const {
-    if (!isSharedPointer()) throw std::bad_variant_access();
-    return std::get<std::shared_ptr<void>>(value);
-}
+// ============================================================
+// typeOf()
+// ============================================================
 
-std::weak_ptr<void> var::getWeakPointer() const {
-    if (!isWeakPointer()) throw std::bad_variant_access();
-    return std::get<std::weak_ptr<void>>(value);
-}
-
-// Helper to get type as string
 std::string var::typeOf() const {
-    if (isInt()) return "Int";
-    if (isDouble()) return "Double";
-    if (isString()) return "String";
-    if (isArray()) return "Array";
-    if (isTable()) return "Table";
-    if (isPointer()) return "Pointer";
-    if (isSharedPointer()) return "SharedPointer";
-    if (isWeakPointer()) return "WeakPointer";
-    if (IsObject()) return "Object"; // Changed from "Custom" to "Object"
-    return "Null";
+    if (isNull())     return "null";
+    if (isBool())     return "bool";
+    if (isInt())      return "int";
+    if (isDouble())   return "double";
+    if (isString())   return "string";
+    if (isArray())    return "array";
+    if (isTable())    return "table";
+    if (isFunction()) return "function";
+    if (isObject())   return "object";
+    return "null";
 }
 
-// Overload the output operator for var
-std::ostream& operator<<(std::ostream& os, const var& varObj) {
-    if (varObj.isInt()) {
-        os << varObj.getInt();
+// ============================================================
+// Truthiness: operator bool()
+// ============================================================
+
+var::operator bool() const {
+    if (isNull())     return false;
+    if (isBool())     return getBool();
+    if (isInt())      return getInt() != 0;
+    if (isDouble())   return getDouble() != 0.0;
+    if (isString())   return !getString().empty();
+    if (isArray())    return !getArray().empty();
+    if (isTable())    return !getTable().empty();
+    if (isFunction()) return true;
+    if (isObject())   return getObject().has_value();
+    return false;
+}
+
+// ============================================================
+// VarProxy
+// ============================================================
+
+var::VarProxy::VarProxy(var& owner, int index) : owner(owner), key(index) {}
+var::VarProxy::VarProxy(var& owner, const std::string& k) : owner(owner), key(k) {}
+var::VarProxy::VarProxy(var& owner, const char* k) : owner(owner), key(std::string(k)) {}
+
+namespace {
+    // Resolve an int key to a valid array index (with negative indexing)
+    int resolveIndex(int idx, size_t size) {
+        if (idx < 0) idx += static_cast<int>(size);
+        return idx;
     }
-    else if (varObj.isDouble()) {
-        os << varObj.getDouble();
+
+    // Get a mutable reference to the nested var that a proxy's key points to
+    var& resolveRef(var& owner, const std::variant<int, std::string>& key) {
+        if (std::holds_alternative<int>(key)) {
+            if (!owner.isArray()) throw std::runtime_error("Cannot index non-array with int");
+            Array& arr = owner.getArray();
+            int idx = resolveIndex(std::get<int>(key), arr.size());
+            if (idx < 0 || idx >= static_cast<int>(arr.size()))
+                throw std::out_of_range("Array index out of range");
+            return arr[idx];
+        }
+        // string key
+        if (!owner.isTable()) throw std::runtime_error("Cannot index non-table with string");
+        return owner.getTable()[std::get<std::string>(key)];
     }
-    else if (varObj.isString()) {
-        os << '"' << varObj.getString() << '"';
+}
+
+var::VarProxy::operator var() const {
+    if (std::holds_alternative<int>(key)) {
+        if (!owner.isArray()) throw std::runtime_error("Cannot index non-array with int");
+        const Array& arr = owner.getArray();
+        int idx = resolveIndex(std::get<int>(key), arr.size());
+        if (idx < 0 || idx >= static_cast<int>(arr.size()))
+            throw std::out_of_range("Array index out of range");
+        return arr[idx];
     }
-    else if (varObj.isArray()) {
-        os << "[ ";
-        const Array& arr = varObj.getArray();
-        for (const auto& item : arr) {
-            os << item << " ";
+    // string key
+    if (!owner.isTable()) throw std::runtime_error("Cannot index non-table with string");
+    const Table& tbl = owner.getTable();
+    auto it = tbl.find(std::get<std::string>(key));
+    if (it == tbl.end()) return var();
+    return it->second;
+}
+
+var::VarProxy& var::VarProxy::operator=(const var& val) {
+    if (std::holds_alternative<int>(key)) {
+        if (!owner.isArray()) throw std::runtime_error("Cannot index non-array with int");
+        Array& arr = owner.getArray();
+        int idx = resolveIndex(std::get<int>(key), arr.size());
+        if (idx < 0) throw std::out_of_range("Negative index out of range");
+        if (idx >= static_cast<int>(arr.size())) arr.resize(idx + 1, var());
+        arr[idx] = val;
+    } else {
+        if (!owner.isTable()) throw std::runtime_error("Cannot index non-table with string");
+        owner.getTable()[std::get<std::string>(key)] = val;
+    }
+    return *this;
+}
+
+var::VarProxy var::VarProxy::operator[](int index) {
+    return VarProxy(resolveRef(owner, key), index);
+}
+
+var::VarProxy var::VarProxy::operator[](const std::string& k) {
+    return VarProxy(resolveRef(owner, key), k);
+}
+
+var::VarProxy var::VarProxy::operator[](const char* k) {
+    return operator[](std::string(k));
+}
+
+// ============================================================
+// operator[] on var
+// ============================================================
+
+var::VarProxy var::operator[](int index) { return VarProxy(*this, index); }
+var::VarProxy var::operator[](const std::string& key) { return VarProxy(*this, key); }
+var::VarProxy var::operator[](const char* key) { return VarProxy(*this, key); }
+
+var var::operator[](int index) const {
+    if (!isArray()) throw std::runtime_error("Cannot index non-array with int");
+    const Array& arr = getArray();
+    int idx = index;
+    if (idx < 0) idx += static_cast<int>(arr.size());
+    if (idx < 0 || idx >= static_cast<int>(arr.size()))
+        throw std::out_of_range("Array index out of range");
+    return arr[idx];
+}
+
+var var::operator[](const std::string& key) const {
+    if (!isTable()) throw std::runtime_error("Cannot index non-table with string");
+    const Table& tbl = getTable();
+    auto it = tbl.find(key);
+    if (it == tbl.end()) return var();
+    return it->second;
+}
+
+var var::operator[](const char* key) const {
+    return operator[](std::string(key));
+}
+
+// ============================================================
+// Arithmetic Operators
+// ============================================================
+
+var operator+(const var& lhs, const var& rhs) {
+    // String concatenation if either side is a string
+    if (lhs.isString() || rhs.isString()) {
+        return var(varToString(lhs) + varToString(rhs));
+    }
+    auto l = toNumeric(lhs);
+    auto r = toNumeric(rhs);
+    if (l.type == NumType::None || r.type == NumType::None)
+        throw std::runtime_error("Cannot add " + lhs.typeOf() + " and " + rhs.typeOf());
+    if (l.type == NumType::Double || r.type == NumType::Double) {
+        double lv = (l.type == NumType::Int) ? static_cast<double>(l.i) : l.d;
+        double rv = (r.type == NumType::Int) ? static_cast<double>(r.i) : r.d;
+        return var(lv + rv);
+    }
+    return var(l.i + r.i);
+}
+
+var operator-(const var& lhs, const var& rhs) {
+    auto l = toNumeric(lhs);
+    auto r = toNumeric(rhs);
+    if (l.type == NumType::None || r.type == NumType::None)
+        throw std::runtime_error("Cannot subtract " + lhs.typeOf() + " and " + rhs.typeOf());
+    if (l.type == NumType::Double || r.type == NumType::Double) {
+        double lv = (l.type == NumType::Int) ? static_cast<double>(l.i) : l.d;
+        double rv = (r.type == NumType::Int) ? static_cast<double>(r.i) : r.d;
+        return var(lv - rv);
+    }
+    return var(l.i - r.i);
+}
+
+var operator*(const var& lhs, const var& rhs) {
+    auto l = toNumeric(lhs);
+    auto r = toNumeric(rhs);
+    if (l.type == NumType::None || r.type == NumType::None)
+        throw std::runtime_error("Cannot multiply " + lhs.typeOf() + " and " + rhs.typeOf());
+    if (l.type == NumType::Double || r.type == NumType::Double) {
+        double lv = (l.type == NumType::Int) ? static_cast<double>(l.i) : l.d;
+        double rv = (r.type == NumType::Int) ? static_cast<double>(r.i) : r.d;
+        return var(lv * rv);
+    }
+    return var(l.i * r.i);
+}
+
+var operator/(const var& lhs, const var& rhs) {
+    auto l = toNumeric(lhs);
+    auto r = toNumeric(rhs);
+    if (l.type == NumType::None || r.type == NumType::None)
+        throw std::runtime_error("Cannot divide " + lhs.typeOf() + " and " + rhs.typeOf());
+    if (l.type == NumType::Double || r.type == NumType::Double) {
+        double lv = (l.type == NumType::Int) ? static_cast<double>(l.i) : l.d;
+        double rv = (r.type == NumType::Int) ? static_cast<double>(r.i) : r.d;
+        if (rv == 0.0) throw std::runtime_error("Division by zero");
+        return var(lv / rv);
+    }
+    if (r.i == 0) throw std::runtime_error("Division by zero");
+    return var(l.i / r.i);
+}
+
+var operator%(const var& lhs, const var& rhs) {
+    auto l = toNumeric(lhs);
+    auto r = toNumeric(rhs);
+    if (l.type == NumType::None || r.type == NumType::None)
+        throw std::runtime_error("Cannot modulo " + lhs.typeOf() + " and " + rhs.typeOf());
+    if (l.type == NumType::Double || r.type == NumType::Double) {
+        double lv = (l.type == NumType::Int) ? static_cast<double>(l.i) : l.d;
+        double rv = (r.type == NumType::Int) ? static_cast<double>(r.i) : r.d;
+        if (rv == 0.0) throw std::runtime_error("Modulo by zero");
+        return var(std::fmod(lv, rv));
+    }
+    if (r.i == 0) throw std::runtime_error("Modulo by zero");
+    return var(l.i % r.i);
+}
+
+var& var::operator+=(const var& rhs) { *this = *this + rhs; return *this; }
+var& var::operator-=(const var& rhs) { *this = *this - rhs; return *this; }
+var& var::operator*=(const var& rhs) { *this = *this * rhs; return *this; }
+var& var::operator/=(const var& rhs) { *this = *this / rhs; return *this; }
+var& var::operator%=(const var& rhs) { *this = *this % rhs; return *this; }
+
+var var::operator-() const {
+    if (isInt()) return var(-getInt());
+    if (isDouble()) return var(-getDouble());
+    throw std::runtime_error("Cannot negate " + typeOf());
+}
+
+var var::operator+() const {
+    if (isInt() || isDouble()) return *this;
+    throw std::runtime_error("Unary + not supported for " + typeOf());
+}
+
+// ============================================================
+// Comparison Operators
+// ============================================================
+
+bool operator==(const var& lhs, const var& rhs) {
+    if (lhs.isNull() && rhs.isNull()) return true;
+    if (lhs.isNull() || rhs.isNull()) return false;
+
+    if (lhs.isBool() && rhs.isBool()) return lhs.getBool() == rhs.getBool();
+
+    // Numeric comparison with coercion
+    auto l = toNumeric(lhs);
+    auto r = toNumeric(rhs);
+    if (l.type != NumType::None && r.type != NumType::None) {
+        if (l.type == NumType::Double || r.type == NumType::Double) {
+            double lv = (l.type == NumType::Int) ? static_cast<double>(l.i) : l.d;
+            double rv = (r.type == NumType::Int) ? static_cast<double>(r.i) : r.d;
+            return lv == rv;
+        }
+        return l.i == r.i;
+    }
+
+    if (lhs.isString() && rhs.isString()) return lhs.getString() == rhs.getString();
+
+    if (lhs.isArray() && rhs.isArray()) {
+        const Array& a = lhs.getArray();
+        const Array& b = rhs.getArray();
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (!(a[i] == b[i])) return false;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool operator!=(const var& lhs, const var& rhs) { return !(lhs == rhs); }
+
+bool operator<(const var& lhs, const var& rhs) {
+    // Numeric
+    auto l = toNumeric(lhs);
+    auto r = toNumeric(rhs);
+    if (l.type != NumType::None && r.type != NumType::None) {
+        if (l.type == NumType::Double || r.type == NumType::Double) {
+            double lv = (l.type == NumType::Int) ? static_cast<double>(l.i) : l.d;
+            double rv = (r.type == NumType::Int) ? static_cast<double>(r.i) : r.d;
+            return lv < rv;
+        }
+        return l.i < r.i;
+    }
+    // String
+    if (lhs.isString() && rhs.isString()) return lhs.getString() < rhs.getString();
+
+    throw std::runtime_error("Cannot compare " + lhs.typeOf() + " and " + rhs.typeOf());
+}
+
+bool operator>(const var& lhs, const var& rhs)  { return rhs < lhs; }
+bool operator<=(const var& lhs, const var& rhs) { return !(rhs < lhs); }
+bool operator>=(const var& lhs, const var& rhs) { return !(lhs < rhs); }
+
+// ============================================================
+// Method-Style API
+// ============================================================
+
+void var::push(const var& val) {
+    if (!isArray()) throw std::runtime_error("push() requires an array");
+    getArray().push_back(val);
+}
+
+var var::pop() {
+    if (!isArray()) throw std::runtime_error("pop() requires an array");
+    Array& arr = getArray();
+    if (arr.empty()) throw std::runtime_error("pop() on empty array");
+    var last = std::move(arr.back());
+    arr.pop_back();
+    return last;
+}
+
+var var::length() const {
+    if (isArray())  return var(static_cast<int>(getArray().size()));
+    if (isTable())  return var(static_cast<int>(getTable().size()));
+    if (isString()) return var(static_cast<int>(getString().size()));
+    throw std::runtime_error("length() not supported for " + typeOf());
+}
+
+bool var::contains(const var& val) const {
+    if (!isArray()) throw std::runtime_error("contains() requires an array");
+    for (const auto& item : getArray()) {
+        if (item == val) return true;
+    }
+    return false;
+}
+
+var var::keys() const {
+    if (!isTable()) throw std::runtime_error("keys() requires a table");
+    Array result;
+    for (const auto& [k, v] : getTable()) {
+        result.push_back(var(k));
+    }
+    return var(std::move(result));
+}
+
+var var::values() const {
+    if (!isTable()) throw std::runtime_error("values() requires a table");
+    Array result;
+    for (const auto& [k, v] : getTable()) {
+        result.push_back(v);
+    }
+    return var(std::move(result));
+}
+
+bool var::has(const std::string& key) const {
+    if (!isTable()) throw std::runtime_error("has() requires a table");
+    return getTable().count(key) > 0;
+}
+
+// ============================================================
+// Iteration
+// ============================================================
+
+Array::iterator var::begin() {
+    if (!isArray()) throw std::runtime_error("Cannot iterate non-array");
+    return getArray().begin();
+}
+
+Array::iterator var::end() {
+    if (!isArray()) throw std::runtime_error("Cannot iterate non-array");
+    return getArray().end();
+}
+
+Array::const_iterator var::begin() const {
+    if (!isArray()) throw std::runtime_error("Cannot iterate non-array");
+    return getArray().begin();
+}
+
+Array::const_iterator var::end() const {
+    if (!isArray()) throw std::runtime_error("Cannot iterate non-array");
+    return getArray().end();
+}
+
+// ============================================================
+// operator<<
+// ============================================================
+
+std::ostream& operator<<(std::ostream& os, const var& v) {
+    if (v.isNull()) {
+        os << "null";
+    } else if (v.isBool()) {
+        os << (v.getBool() ? "true" : "false");
+    } else if (v.isInt()) {
+        os << v.getInt();
+    } else if (v.isDouble()) {
+        os << v.getDouble();
+    } else if (v.isString()) {
+        os << '"' << v.getString() << '"';
+    } else if (v.isArray()) {
+        os << "[";
+        const Array& arr = v.getArray();
+        for (size_t i = 0; i < arr.size(); ++i) {
+            if (i > 0) os << ", ";
+            os << arr[i];
         }
         os << "]";
-    }
-    else if (varObj.isTable()) {
-        os << "{ ";
-        const Table& tbl = varObj.getTable();
-        for (const auto& [key, value] : tbl) {
-            os << '"' << key << "\": " << value << " ";
+    } else if (v.isTable()) {
+        os << "{";
+        const Table& tbl = v.getTable();
+        bool first = true;
+        for (const auto& [key, val] : tbl) {
+            if (!first) os << ", ";
+            os << '"' << key << "\": " << val;
+            first = false;
         }
         os << "}";
-    }
-    else if (varObj.isPointer()) {
-        os << "Pointer(";
-        if (varObj.getPointer()) {
-            os << *(varObj.getPointer());
-        }
-        else {
-            os << "nullptr";
-        }
-        os << ")";
-    }
-    else if (varObj.isSharedPointer()) {
-        os << "SharedPointer(";
-        auto ptr = varObj.getSharedPointer();
-        if (ptr) {
-            os << ptr.get();
-        }
-        else {
-            os << "nullptr";
-        }
-        os << ")";
-    }
-    else if (varObj.isWeakPointer()) {
-        os << "WeakPointer(";
-        auto ptr = varObj.getWeakPointer().lock();
-        if (ptr) {
-            // Attempt to print the pointed-to var
-            auto pointedVar = std::static_pointer_cast<var>(ptr);
-            os << *pointedVar;
-        }
-        else {
-            os << "expired";
-        }
-        os << ")";
-    }
-    else if (varObj.IsObject()) {
+    } else if (v.isFunction()) {
+        os << "function";
+    } else if (v.isObject()) {
         os << "Object(";
         try {
-            const std::any& customObj = varObj.getObject();
-            if (customObj.has_value()) {
-                // Generic handling for std::any
-                os << "/* Custom Type: " << customObj.type().name() << " */";
+            const std::any& obj = v.getObject();
+            if (obj.has_value()) {
+                os << obj.type().name();
+            } else {
+                os << "empty";
             }
-            else {
-                os << "/* Empty std::any */";
-            }
-        }
-        catch (...) {
-            os << "/* Unprintable Custom Type */";
+        } catch (...) {
+            os << "unknown";
         }
         os << ")";
-    }
-    else {
-        os << "Null";
     }
     return os;
 }
 
+// ============================================================
+// Static Utilities
+// ============================================================
 
-// ------------------------ Helper Functions Implementations ------------------------
-
-// Boxing functions
-var var::makeInt(int x) { return var(x); }
-var var::makeDouble(double x) { return var(x); }
-var var::makeString(const std::string& x) { return var(x); }
-var var::makeString(std::string&& x) { return var(std::move(x)); }
-var var::makeArray(const Array& arr) { return var(arr); }
-var var::makeArray(Array&& arr) { return var(std::move(arr)); }
-var var::makeTable(const Table& tbl) { return var(tbl); }
-var var::makeTable(Table&& tbl) { return var(std::move(tbl)); }
-var var::makePointer(const var& varObj) { return var(std::make_shared<var>(varObj)); }
-var var::makePointer(var&& varObj) { return var(std::make_shared<var>(std::move(varObj))); }
-var var::makeCustom(const std::any& customObj) { return var(customObj); }
-var var::makeCustom(std::any&& customObj) { return var(std::move(customObj)); }
-
-// Array functions
-var var::newArray(const Array& arr) { return var(arr); }
-var var::newArray(Array&& arr) { return var(std::move(arr)); }
-var var::getElement(const var& arrayVar, size_t index) {
-    if (!arrayVar.isArray()) throw std::runtime_error("var is not an Array");
-    const Array& arr = arrayVar.getArray();
-    if (index >= arr.size()) throw std::out_of_range("Index out of range");
-    return arr[index];
-}
-void var::setElement(var& arrayVar, size_t index, const var& value) {
-    if (!arrayVar.isArray()) throw std::runtime_error("var is not an Array");
-    Array& arr = arrayVar.getArray();
-    if (index >= arr.size()) arr.resize(index + 1, var());
-    arr[index] = value;
-}
-void var::appendElement(var& arrayVar, const var& value) {
-    if (!arrayVar.isArray()) throw std::runtime_error("var is not an Array");
-    arrayVar.getArray().emplace_back(value);
-}
-
-// Table functions
-var var::newTable(const Table& tbl) { return var(tbl); }
-var var::newTable(Table&& tbl) { return var(std::move(tbl)); }
-var var::getElement(const var& tableVar, const std::string& key) {
-    if (!tableVar.isTable()) throw std::runtime_error("var is not a Table");
-    const Table& tbl = tableVar.getTable();
-    auto it = tbl.find(key);
-    if (it == tbl.end()) throw std::out_of_range("Key not found");
-    return it->second;
-}
-void var::setElement(var& tableVar, const std::string& key, const var& value) {
-    if (!tableVar.isTable()) throw std::runtime_error("var is not a Table");
-    tableVar.getTable()[key] = value;
-}
-
-// Utility functions
-size_t var::len(const var& varObj) {
-    if (varObj.isArray()) return varObj.getArray().size();
-    if (varObj.isTable()) return varObj.getTable().size();
-    throw std::runtime_error("var is neither Array nor Table");
+size_t var::len(const var& v) {
+    if (v.isArray()) return v.getArray().size();
+    if (v.isTable()) return v.getTable().size();
+    if (v.isString()) return v.getString().size();
+    throw std::runtime_error("len() not supported for " + v.typeOf());
 }
 
 var var::range(int start, int end, int step) {
@@ -410,31 +653,29 @@ var var::range(int start, int end, int step) {
     Array arr;
     if (step > 0) {
         for (int i = start; i < end; i += step) {
-            arr.emplace_back(makeInt(i));
+            arr.emplace_back(i);
         }
-    }
-    else {
+    } else {
         for (int i = start; i > end; i += step) {
-            arr.emplace_back(makeInt(i));
+            arr.emplace_back(i);
         }
     }
-    return var(arr);
+    return var(std::move(arr));
 }
 
 var var::range(int end) {
     return range(0, end, 1);
 }
 
-var var::slice(const var& arrayVar, int start, int end, int step) {
-    if (!arrayVar.isArray()) throw std::runtime_error("var is not an Array");
-    const Array& arr = arrayVar.getArray();
-    Array slicedArr;
+var var::slice(const var& v, int start, int end, int step) {
+    if (!v.isArray()) throw std::runtime_error("slice() requires an array");
+    const Array& arr = v.getArray();
+    Array result;
 
-    // Handle negative indices
     auto normalize = [&](int index) -> int {
         if (index < 0) return static_cast<int>(arr.size()) + index;
         return index;
-        };
+    };
 
     start = normalize(start);
     end = normalize(end);
@@ -443,14 +684,13 @@ var var::slice(const var& arrayVar, int start, int end, int step) {
 
     if (step > 0) {
         for (int i = start; i < end && i < static_cast<int>(arr.size()); i += step) {
-            slicedArr.emplace_back(arr[i]);
+            if (i >= 0) result.emplace_back(arr[i]);
         }
-    }
-    else {
+    } else {
         for (int i = start; i > end && i >= 0; i += step) {
-            slicedArr.emplace_back(arr[i]);
+            if (i < static_cast<int>(arr.size())) result.emplace_back(arr[i]);
         }
     }
 
-    return var(slicedArr);
+    return var(std::move(result));
 }

@@ -4,43 +4,26 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <memory>
 #include <iostream>
 #include <stdexcept>
 #include <any>
 #include <type_traits>
+#include <functional>
+#include <sstream>
+#include <cmath>
 
-// Forward declaration for nested structures
+// Forward declaration
 struct var;
 
-// Define Array and Table using vectors and unordered_maps of var
+// Type aliases
 using Array = std::vector<var>;
 using Table = std::unordered_map<std::string, var>;
-
-// Enum for var types
-enum class varType {
-    Null,
-    Int,
-    Double,
-    String,
-    Array,
-    Table,
-    Pointer,        // Pointer to var (shared_ptr<var>)
-    SharedPointer,  // std::shared_ptr<void>
-    WeakPointer,    // std::weak_ptr<void>
-    Object          // Renamed from Custom for consistency
-};
-
-// Type trait to check if T is a std::weak_ptr
-template <typename T>
-struct is_weak_ptr : std::false_type {};
-
-template <typename T>
-struct is_weak_ptr<std::weak_ptr<T>> : std::true_type {};
+using Function = std::function<var(Array)>;
 
 // Type trait to check if T is explicitly supported by var constructors
 template <typename T>
 struct is_var_supported : std::disjunction<
+    std::is_same<T, bool>,
     std::is_same<T, int>,
     std::is_same<T, double>,
     std::is_same<T, std::string>,
@@ -48,30 +31,53 @@ struct is_var_supported : std::disjunction<
     std::is_same<T, char*>,
     std::is_same<T, Array>,
     std::is_same<T, Table>,
-    std::is_same<T, std::shared_ptr<var>>,
+    std::is_same<T, Function>,
     std::is_same<T, std::any>
 > {};
 
-// Define the var structure
 struct var {
-    // Define the variant to hold different types
-    using Pointer = std::shared_ptr<var>;
-
     std::variant<
-        std::monostate,                 // Represents 'null' or 'undefined'
-        int,                            // Integer
-        double,                         // Double
-        std::string,                    // String
-        Array,                          // Dynamic Array
-        Table,                          // Dynamic Table (Dictionary)
-        Pointer,                        // Pointer to var for nested structures
-        std::any,                       // Custom type for user-defined classes and pointers
-        std::shared_ptr<void>,          // Shared Pointer (also used for typed pointer ownership)
-        std::weak_ptr<void>             // Weak Pointer
+        std::monostate,   // 0 - null
+        bool,             // 1 - boolean
+        int,              // 2 - integer
+        double,           // 3 - double
+        std::string,      // 4 - string
+        Array,            // 5 - array
+        Table,            // 6 - table
+        Function,         // 7 - callable
+        std::any          // 8 - custom object
     > value;
 
-    // Constructors
+    // ---- VarProxy for operator[] read/write ----
+    struct VarProxy {
+        var& owner;
+        std::variant<int, std::string> key;
+
+        VarProxy(var& owner, int index);
+        VarProxy(var& owner, const std::string& k);
+        VarProxy(var& owner, const char* k);
+
+        // Read
+        operator var() const;
+
+        // Write
+        VarProxy& operator=(const var& val);
+
+        // Chained access
+        VarProxy operator[](int index);
+        VarProxy operator[](const std::string& key);
+        VarProxy operator[](const char* key);
+
+        // Allow printing a proxy
+        friend std::ostream& operator<<(std::ostream& os, const VarProxy& proxy) {
+            os << static_cast<var>(proxy);
+            return os;
+        }
+    };
+
+    // ---- Constructors ----
     var();
+    var(bool v);
     var(int v);
     var(double v);
     var(const std::string& v);
@@ -81,56 +87,28 @@ struct var {
     var(Array&& v);
     var(const Table& v);
     var(Table&& v);
-    var(const Pointer& v);
-    var(Pointer&& v);
+    var(const Function& v);
+    var(Function&& v);
     var(const std::any& v);
     var(std::any&& v);
 
-    // Template constructors
+    // Catch-all: wrap unknown types in std::any
     template <typename T, typename = std::enable_if_t<
         !std::is_same_v<std::decay_t<T>, var> &&
-        !std::is_pointer_v<std::decay_t<T>> &&
-        !is_weak_ptr<std::decay_t<T>>::value &&
+        !std::is_same_v<std::decay_t<T>, VarProxy> &&
         !is_var_supported<std::decay_t<T>>::value
-        >>
-        var(T&& v) : value(std::any(std::forward<T>(v))) {}
+    >>
+    var(T&& v) : value(std::any(std::forward<T>(v))) {}
 
-    // Typed pointer constructor: takes ownership via shared_ptr with typed deleter
-    template <typename T, typename = std::enable_if_t<
-        std::is_pointer_v<std::decay_t<T>> &&
-        !std::is_same_v<std::decay_t<T>, void*> &&
-        !is_weak_ptr<std::decay_t<T>>::value
-        >>
-        var(T ptr) {
-            using PointeeType = std::remove_pointer_t<std::decay_t<T>>;
-            if (ptr) {
-                value = std::shared_ptr<void>(
-                    const_cast<void*>(static_cast<const void*>(ptr)),
-                    [](void* p) { delete static_cast<PointeeType*>(p); }
-                );
-            } else {
-                value = std::shared_ptr<void>(nullptr);
-            }
-        }
-
-    template <typename T, typename = std::enable_if_t<is_weak_ptr<std::decay_t<T>>::value>>
-    var(const T& wp) {
-        std::weak_ptr<void> wp_void;
-        if (auto sp = wp.lock()) {
-            wp_void = std::static_pointer_cast<void>(sp);
-        }
-        value = wp_void;
-    }
-
-    // Copy and Move Constructors
+    // Copy and Move
     var(const var& other);
     var(var&& other) noexcept = default;
 
-    // Copy and Move Assignment Operators
+    // ---- Assignment Operators ----
     var& operator=(const var& other);
     var& operator=(var&& other) noexcept = default;
 
-    // Assignment Operators for different types
+    var& operator=(bool v);
     var& operator=(int v);
     var& operator=(double v);
     var& operator=(const std::string& v);
@@ -140,227 +118,176 @@ struct var {
     var& operator=(Array&& v);
     var& operator=(const Table& v);
     var& operator=(Table&& v);
-    var& operator=(const Pointer& v);
-    var& operator=(Pointer&& v);
+    var& operator=(const Function& v);
+    var& operator=(Function&& v);
     var& operator=(const std::any& v);
     var& operator=(std::any&& v);
 
-    // Template assignment operators
+    // Catch-all assignment
     template <typename T, typename = std::enable_if_t<
         !std::is_same_v<std::decay_t<T>, var> &&
-        !std::is_pointer_v<std::decay_t<T>> &&
-        !is_weak_ptr<std::decay_t<T>>::value &&
+        !std::is_same_v<std::decay_t<T>, VarProxy> &&
         !is_var_supported<std::decay_t<T>>::value
-        >>
-        var & operator=(T&& v) {
-            value = std::any(std::forward<T>(v));
-            return *this;
-        }
-
-    // Typed pointer assignment: takes ownership via shared_ptr with typed deleter
-    template <typename T, typename = std::enable_if_t<
-        std::is_pointer_v<std::decay_t<T>> &&
-        !std::is_same_v<std::decay_t<T>, void*> &&
-        !is_weak_ptr<std::decay_t<T>>::value
-        >>
-        var & operator=(T ptr) {
-            using PointeeType = std::remove_pointer_t<std::decay_t<T>>;
-            if (ptr) {
-                value = std::shared_ptr<void>(
-                    const_cast<void*>(static_cast<const void*>(ptr)),
-                    [](void* p) { delete static_cast<PointeeType*>(p); }
-                );
-            } else {
-                value = std::shared_ptr<void>(nullptr);
-            }
-            return *this;
-        }
-
-    template <typename T, typename = std::enable_if_t<is_weak_ptr<std::decay_t<T>>::value>>
-    var& operator=(const T& wp) {
-        std::weak_ptr<void> wp_void;
-        if (auto sp = wp.lock()) {
-            wp_void = std::static_pointer_cast<void>(sp);
-        }
-        value = wp_void;
+    >>
+    var& operator=(T&& v) {
+        value = std::any(std::forward<T>(v));
         return *this;
     }
 
-    // Type checking functions
+    // ---- Type Checking ----
+    bool isNull() const;
+    bool isBool() const;
     bool isInt() const;
     bool isDouble() const;
+    bool isNumber() const;
     bool isString() const;
     bool isArray() const;
     bool isTable() const;
-    bool isPointer() const;
-    bool isSharedPointer() const;
-    bool isWeakPointer() const;
-    bool IsObject() const; // Renamed from isCustom()
-    bool isNull() const;
+    bool isFunction() const;
+    bool isObject() const;
 
-    // Getters with type safety
+    // ---- Getters ----
+    bool getBool() const;
     int getInt() const;
     double getDouble() const;
+    double toNumber() const;
     const std::string& getString() const;
     std::string& getString();
     const Array& getArray() const;
     Array& getArray();
     const Table& getTable() const;
     Table& getTable();
-    const Pointer& getPointer() const;
-    Pointer& getPointer();
-    const std::any& getObject() const; // Renamed from getCustom()
-    std::any& getObject(); // Renamed from getCustom()
-    std::shared_ptr<void> getSharedPointer() const;
-    std::weak_ptr<void> getWeakPointer() const;
+    const Function& getFunction() const;
+    Function& getFunction();
+    const std::any& getObject() const;
+    std::any& getObject();
 
-    // Helper to get type as string
+    // ---- Type Info ----
     std::string typeOf() const;
 
-    // Overload the output operator for var
-    friend std::ostream& operator<<(std::ostream& os, const var& varObj);
+    // ---- Truthiness ----
+    explicit operator bool() const;
 
-    // Function to retrieve varType
-    friend varType getVarType(const var& varObj);
+    // ---- operator[] ----
+    VarProxy operator[](int index);
+    VarProxy operator[](const std::string& key);
+    VarProxy operator[](const char* key);
+    var operator[](int index) const;
+    var operator[](const std::string& key) const;
+    var operator[](const char* key) const;
 
-    // ------------------------ Helper Functions Declarations ------------------------
+    // ---- operator() for callables ----
+    template <typename... Args>
+    var operator()(Args&&... args) const {
+        if (!isFunction()) throw std::runtime_error("var is not callable");
+        Array argv{var(std::forward<Args>(args))...};
+        return getFunction()(argv);
+    }
 
-    // Boxing functions
-    static var makeInt(int x);
-    static var makeDouble(double x);
-    static var makeString(const std::string& x);
-    static var makeString(std::string&& x);
-    static var makeArray(const Array& arr);
-    static var makeArray(Array&& arr);
-    static var makeTable(const Table& tbl);
-    static var makeTable(Table&& tbl);
-    static var makePointer(const var& varObj);
-    static var makePointer(var&& varObj);
-    static var makeCustom(const std::any& customObj);
-    static var makeCustom(std::any&& customObj);
+    var operator()() const {
+        if (!isFunction()) throw std::runtime_error("var is not callable");
+        return getFunction()(Array{});
+    }
 
-    // Array functions
-    static var newArray(const Array& arr);
-    static var newArray(Array&& arr);
-    static var getElement(const var& arrayVar, size_t index);
-    static void setElement(var& arrayVar, size_t index, const var& value);
-    static void appendElement(var& arrayVar, const var& value);
+    // ---- Arithmetic Operators ----
+    friend var operator+(const var& lhs, const var& rhs);
+    friend var operator-(const var& lhs, const var& rhs);
+    friend var operator*(const var& lhs, const var& rhs);
+    friend var operator/(const var& lhs, const var& rhs);
+    friend var operator%(const var& lhs, const var& rhs);
 
-    // Table functions
-    static var newTable(const Table& tbl);
-    static var newTable(Table&& tbl);
-    static var getElement(const var& tableVar, const std::string& key);
-    static void setElement(var& tableVar, const std::string& key, const var& value);
+    var& operator+=(const var& rhs);
+    var& operator-=(const var& rhs);
+    var& operator*=(const var& rhs);
+    var& operator/=(const var& rhs);
+    var& operator%=(const var& rhs);
 
-    // Utility functions
-    static size_t len(const var& varObj);
+    var operator-() const;
+    var operator+() const;
+
+    // ---- Comparison Operators ----
+    friend bool operator==(const var& lhs, const var& rhs);
+    friend bool operator!=(const var& lhs, const var& rhs);
+    friend bool operator<(const var& lhs, const var& rhs);
+    friend bool operator>(const var& lhs, const var& rhs);
+    friend bool operator<=(const var& lhs, const var& rhs);
+    friend bool operator>=(const var& lhs, const var& rhs);
+
+    // ---- Method-Style API ----
+    void push(const var& val);
+    var pop();
+    var length() const;
+    bool contains(const var& val) const;
+    var keys() const;
+    var values() const;
+    bool has(const std::string& key) const;
+
+    // ---- Iteration (arrays only) ----
+    Array::iterator begin();
+    Array::iterator end();
+    Array::const_iterator begin() const;
+    Array::const_iterator end() const;
+
+    // ---- Output ----
+    friend std::ostream& operator<<(std::ostream& os, const var& v);
+
+    // ---- Static Utilities ----
+    static size_t len(const var& v);
     static var range(int start, int end, int step = 1);
     static var range(int end);
-    static var slice(const var& arrayVar, int start, int end, int step = 1);
-
-    // Utility functions for smart pointers
-    template <typename T>
-    static var makeSmartPointer(const std::shared_ptr<T>& ptr);
-
-    template <typename T>
-    static var makeSmartPointer(std::shared_ptr<T>&& ptr);
-
-    template <typename T>
-    static var makeSmartPointer(std::unique_ptr<T>&& ptr);
-
-    template <typename T>
-    static var makeSmartPointer(const std::weak_ptr<T>& ptr);
-
-    // Non-owning reference to an external object (user manages lifetime)
-    template <typename T>
-    static var ref(T* ptr) {
-        var v;
-        if (ptr) {
-            v.value = std::shared_ptr<void>(
-                const_cast<void*>(static_cast<const void*>(ptr)),
-                [](void*) { /* no-op deleter: does not own the object */ }
-            );
-        } else {
-            v.value = std::shared_ptr<void>(nullptr);
-        }
-        return v;
-    }
+    static var slice(const var& v, int start, int end, int step = 1);
 };
 
-// Free functions
-inline varType getVarType(const var& varObj) {
-    if (varObj.isInt()) return varType::Int;
-    if (varObj.isDouble()) return varType::Double;
-    if (varObj.isString()) return varType::String;
-    if (varObj.isArray()) return varType::Array;
-    if (varObj.isTable()) return varType::Table;
-    if (varObj.isPointer()) return varType::Pointer;
-    if (varObj.isSharedPointer()) return varType::SharedPointer;
-    if (varObj.isWeakPointer()) return varType::WeakPointer;
-    if (varObj.IsObject()) return varType::Object;
-    return varType::Null;
-}
-
-// Boxing functions
-inline var makeInt(int x) { return var::makeInt(x); }
-inline var makeDouble(double x) { return var::makeDouble(x); }
-inline var makeString(const std::string& x) { return var::makeString(x); }
-inline var makeString(std::string&& x) { return var::makeString(std::move(x)); }
-inline var makeArray(const Array& arr) { return var::makeArray(arr); }
-inline var makeArray(Array&& arr) { return var::makeArray(std::move(arr)); }
-inline var makeTable(const Table& tbl) { return var::makeTable(tbl); }
-inline var makeTable(Table&& tbl) { return var::makeTable(std::move(tbl)); }
-inline var makePointer(const var& varObj) { return var::makePointer(varObj); }
-inline var makePointer(var&& varObj) { return var::makePointer(std::move(varObj)); }
-inline var makeCustom(const std::any& customObj) { return var::makeCustom(customObj); }
-inline var makeCustom(std::any&& customObj) { return var::makeCustom(std::move(customObj)); }
-
-// Array functions
-inline var newArray(const Array& arr) { return var::newArray(arr); }
-inline var newArray(Array&& arr) { return var::newArray(std::move(arr)); }
-inline var getElement(const var& arrayVar, size_t index) { return var::getElement(arrayVar, index); }
-inline void setElement(var& arrayVar, size_t index, const var& value) { var::setElement(arrayVar, index, value); }
-inline void appendElement(var& arrayVar, const var& value) { var::appendElement(arrayVar, value); }
-
-// Table functions
-inline var newTable(const Table& tbl) { return var::newTable(tbl); }
-inline var newTable(Table&& tbl) { return var::newTable(std::move(tbl)); }
-inline var getElement(const var& tableVar, const std::string& key) { return var::getElement(tableVar, key); }
-inline void setElement(var& tableVar, const std::string& key, const var& value) { var::setElement(tableVar, key, value); }
-
-// Utility functions
-inline size_t len(const var& varObj) { return var::len(varObj); }
+// ---- Free function utilities ----
+inline size_t len(const var& v) { return var::len(v); }
 inline var range(int start, int end, int step = 1) { return var::range(start, end, step); }
 inline var range(int end) { return var::range(end); }
-inline var slice(const var& arrayVar, int start, int end, int step = 1) { return var::slice(arrayVar, start, end, step); }
+inline var slice(const var& v, int start, int end, int step = 1) { return var::slice(v, start, end, step); }
 
-// Utility functions for smart pointers
-template <typename T>
-var var::makeSmartPointer(const std::shared_ptr<T>& ptr) {
-    var v;
-    v.value = std::static_pointer_cast<void>(ptr);
-    return v;
-}
-
-template <typename T>
-var var::makeSmartPointer(std::shared_ptr<T>&& ptr) {
-    var v;
-    v.value = std::static_pointer_cast<void>(std::move(ptr));
-    return v;
-}
-
-template <typename T>
-var var::makeSmartPointer(std::unique_ptr<T>&& ptr) {
-    var v;
-    v.value = std::shared_ptr<void>(std::move(ptr));
-    return v;
-}
-
-template <typename T>
-var var::makeSmartPointer(const std::weak_ptr<T>& ptr) {
-    std::weak_ptr<void> wp_void;
-    if (auto sp = ptr.lock()) {
-        wp_void = std::static_pointer_cast<void>(sp);
+// ---- print() ----
+namespace detail {
+    inline void print_var(std::ostream& os, const var& v) {
+        if (v.isString()) {
+            os << v.getString();
+        } else {
+            os << v;
+        }
     }
-    return var(wp_void);
+
+    template <typename T>
+    void print_val(std::ostream& os, const T& v) {
+        os << v;
+    }
+
+    template <>
+    inline void print_val<var>(std::ostream& os, const var& v) {
+        print_var(os, v);
+    }
+
+    template <>
+    inline void print_val<var::VarProxy>(std::ostream& os, const var::VarProxy& v) {
+        print_var(os, static_cast<var>(v));
+    }
+
+    template <>
+    inline void print_val<bool>(std::ostream& os, const bool& v) {
+        os << (v ? "true" : "false");
+    }
+}
+
+inline void print() {
+    std::cout << std::endl;
+}
+
+template <typename T>
+void print(const T& first) {
+    detail::print_val(std::cout, first);
+    std::cout << std::endl;
+}
+
+template <typename T, typename... Args>
+void print(const T& first, const Args&... rest) {
+    detail::print_val(std::cout, first);
+    std::cout << " ";
+    print(rest...);
 }
