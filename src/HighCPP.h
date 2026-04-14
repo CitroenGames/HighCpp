@@ -62,6 +62,14 @@ struct var {
 
         // Write
         VarProxy& operator=(const var& val);
+        VarProxy& operator=(const VarProxy& other);
+
+        // Compound assignment (forwards through var operators)
+        VarProxy& operator+=(const var& rhs);
+        VarProxy& operator-=(const var& rhs);
+        VarProxy& operator*=(const var& rhs);
+        VarProxy& operator/=(const var& rhs);
+        VarProxy& operator%=(const var& rhs);
 
         // Chained access
         VarProxy operator[](int index);
@@ -180,13 +188,17 @@ struct var {
     template <typename... Args>
     var operator()(Args&&... args) const {
         if (!isFunction()) throw std::runtime_error("var is not callable");
+        const Function& fn = getFunction();
+        if (!fn) throw std::runtime_error("var holds an empty function");
         Array argv{var(std::forward<Args>(args))...};
-        return getFunction()(argv);
+        return fn(argv);
     }
 
     var operator()() const {
         if (!isFunction()) throw std::runtime_error("var is not callable");
-        return getFunction()(Array{});
+        const Function& fn = getFunction();
+        if (!fn) throw std::runtime_error("var holds an empty function");
+        return fn(Array{});
     }
 
     // ---- Arithmetic Operators ----

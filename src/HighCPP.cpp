@@ -308,6 +308,36 @@ var::VarProxy& var::VarProxy::operator=(const var& val) {
     return *this;
 }
 
+var::VarProxy& var::VarProxy::operator=(const VarProxy& other) {
+    var resolved = static_cast<var>(other);
+    return operator=(resolved);
+}
+
+var::VarProxy& var::VarProxy::operator+=(const var& rhs) {
+    var current = static_cast<var>(*this);
+    return operator=(current + rhs);
+}
+
+var::VarProxy& var::VarProxy::operator-=(const var& rhs) {
+    var current = static_cast<var>(*this);
+    return operator=(current - rhs);
+}
+
+var::VarProxy& var::VarProxy::operator*=(const var& rhs) {
+    var current = static_cast<var>(*this);
+    return operator=(current * rhs);
+}
+
+var::VarProxy& var::VarProxy::operator/=(const var& rhs) {
+    var current = static_cast<var>(*this);
+    return operator=(current / rhs);
+}
+
+var::VarProxy& var::VarProxy::operator%=(const var& rhs) {
+    var current = static_cast<var>(*this);
+    return operator=(current % rhs);
+}
+
 var::VarProxy var::VarProxy::operator[](int index) {
     return VarProxy(resolveRef(owner, key), index);
 }
